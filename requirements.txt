@@ -1,0 +1,4 @@
+streamlit
+breeze-connect
+pandas
+numpy
