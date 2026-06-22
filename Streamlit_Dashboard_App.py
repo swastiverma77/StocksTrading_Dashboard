@@ -66,21 +66,61 @@ def check_1_2_target(df, signal_idx):
 
 def load_and_update_data(breeze_client, symbol):
     file_path = os.path.join(DATA_FOLDER, f"{symbol}_5min.csv")
+    df = pd.DataFrame()
     
     if os.path.exists(file_path):
-        df = pd.read_csv(file_path, index_col=0, parse_dates=True)
-        # Ensure index is a DatetimeIndex
-        df.index = pd.to_datetime(df.index)
-        # Ensure index is timezone aware (localized to IST)
-        if df.index.tz is None:
-            df.index = df.index.tz_localize('UTC').tz_convert(IST)
-        df = df.sort_index()
+        try:
+            # Smart CSV reading to handle complex multi-row headers
+            raw_df = pd.read_csv(file_path)
+            
+            # Detect the 3-row header format (Where A2 = "Ticker")
+            if len(raw_df) > 2 and 'ticker' in str(raw_df.iloc[0, 0]).lower():
+                # Drop the 'Ticker' and 'Datetime' heading rows (Index 0 and 1)
+                # Keep only the first 6 columns to avoid trailing commas
+                raw_df = raw_df.iloc[2:, :6].copy()
+                # Map exactly to your specified layout: A:Datetime, B:Close, C:High, D:Low, E:Open, F:Volume
+                raw_df.columns = ['datetime', 'close', 'high', 'low', 'open', 'volume']
+            else:
+                # Handle normal/standard format (used after the app updates the CSV)
+                raw_df.columns = raw_df.columns.str.strip().str.lower()
+                if 'unnamed: 0' in raw_df.columns:
+                    raw_df.rename(columns={'unnamed: 0': 'datetime'}, inplace=True)
+                if 'price' in raw_df.columns and 'datetime' not in raw_df.columns:
+                    raw_df.rename(columns={'price': 'datetime'}, inplace=True)
+            
+            # Locate the datetime column dynamically
+            date_col = next((c for c in ['datetime', 'date', 'time', 'timestamp'] if c in raw_df.columns), None)
+            
+            if date_col:
+                raw_df.index = pd.to_datetime(raw_df[date_col], format='mixed', errors='coerce')
+                raw_df = raw_df.drop(columns=[date_col], errors='ignore')
+            else:
+                raw_df.index = pd.to_datetime(raw_df.iloc[:, 0], format='mixed', errors='coerce')
+                        
+            # Ensure columns are truly numeric
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                if col in raw_df.columns:
+                    raw_df[col] = pd.to_numeric(raw_df[col], errors='coerce')
+                    
+            # Remove unparseable rows and sort
+            df = raw_df[raw_df.index.notnull()].dropna(subset=['close']).sort_index()
+            
+            if not df.empty:
+                # The strings have +00:00, so pandas knows it is UTC. We just convert to IST.
+                if df.index.tz is None:
+                    df.index = df.index.tz_localize('UTC').tz_convert(IST)
+                else:
+                    df.index = df.index.tz_convert(IST)
+                    
+        except Exception as e:
+            st.error(f"Error parsing local data for {symbol}: {e}")
+            return pd.DataFrame()
     else:
         st.error(f"File not found: {file_path}")
         return pd.DataFrame()
 
     # Gap Update Logic
-    if breeze_client:
+    if breeze_client and not df.empty:
         last_ts = df.index.max()
         now = datetime.now(IST)
         if last_ts < (now - timedelta(minutes=5)):
@@ -97,6 +137,8 @@ def load_and_update_data(breeze_client, symbol):
                     new_data = pd.DataFrame(response['success'])
                     new_data['datetime'] = pd.to_datetime(new_data['datetime'], format='ISO8601').dt.tz_localize('UTC').dt.tz_convert(IST)
                     new_data.set_index('datetime', inplace=True)
+                    
+                    # Merge and deduplicate
                     df = pd.concat([df, new_data]).drop_duplicates().sort_index()
                     df.to_csv(file_path)
             except Exception as e:
