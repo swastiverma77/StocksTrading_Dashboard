@@ -15,7 +15,15 @@ os.makedirs(DATA_FOLDER, exist_ok=True)
 NIFTY50_SYMBOLS = ["RELIANCE", "HDFCBANK", "INFY", "ICICIBANK", "TCS"]
 
 def base_squeeze_math(df):
-    """Sync'd with advanced_backtest.py logic."""
+    """Sync'd with advanced_backtest.py logic with added column normalization."""
+    # Normalize column names to lowercase to prevent KeyErrors
+    df.columns = df.columns.str.strip().str.lower()
+    
+    # Ensure necessary columns are numeric
+    for col in ['close', 'high', 'low', 'volume']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
     df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
     df['ema200'] = df['close'].ewm(span=200, adjust=False).mean()
