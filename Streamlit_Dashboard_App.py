@@ -69,6 +69,8 @@ def load_and_update_data(breeze_client, symbol):
     
     if os.path.exists(file_path):
         df = pd.read_csv(file_path, index_col=0, parse_dates=True)
+        # Ensure index is a DatetimeIndex
+        df.index = pd.to_datetime(df.index)
         # Ensure index is timezone aware (localized to IST)
         if df.index.tz is None:
             df.index = df.index.tz_localize('UTC').tz_convert(IST)
