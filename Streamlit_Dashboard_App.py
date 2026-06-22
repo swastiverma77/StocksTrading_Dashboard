@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 import streamlit as st
-import concurrent.futures
 from breeze_connect import BreezeConnect
 
 # --- ENVIRONMENT CONFIGURATION ---
@@ -53,7 +52,8 @@ def fetch_icici_intraday(breeze_client, symbol, start_date, end_date):
             df.set_index('datetime', inplace=True)
             df = df[['open', 'high', 'low', 'close', 'volume']]
             return df.apply(pd.to_numeric, errors='coerce')
-        return pd.DataFrame()
+        else:
+            return pd.DataFrame()
     except Exception as e:
         return pd.DataFrame()
 
@@ -174,25 +174,6 @@ def advanced_squeeze_backtester(df, symbol):
 
     return signal_rows[['Symbol', 'close', 'vwap', 'RSI_Level', 'BBW_Tier', 'Vol_Expansion_Ratio', 'Vol_Tier', 'Max_Gain_%', 'Hit_1%', 'Hit_2%']]
 
-def scan_single_symbol_live(breeze_client, symbol, cached_df, now, one_month_ago):
-    """Background worker function for lightning-fast concurrent execution."""
-    catchup_start = max(cached_df.index.max(), one_month_ago) if not cached_df.empty else one_month_ago
-    live_df = fetch_icici_intraday(breeze_client, symbol, catchup_start, now)
-    
-    signal_data = None
-    has_new_data = not live_df.empty
-
-    if has_new_data:
-        combined_df = pd.concat([cached_df, live_df])
-        combined_df = combined_df[~combined_df.index.duplicated(keep='last')].sort_index()
-        combined_df = combined_df[combined_df.index >= one_month_ago]
-        _, signal_data = advanced_squeeze_live_scanner(combined_df, symbol)
-    else:
-        combined_df = cached_df
-        
-    time.sleep(0.1) # Micro-pause to respect API limits across threads
-    return symbol, combined_df, signal_data, has_new_data
-
 # --- 4. STREAMLIT UI & EXECUTION ENGINE ---
 st.set_page_config(page_title="Institutional Scanner", layout="wide", page_icon="📈")
 
@@ -243,6 +224,7 @@ tab_live, tab_backtest = st.tabs(["🔴 Live Scanner", "⏪ Backtesting"])
 with tab_live:
     st.subheader("Real-Time Institutional Breakout Detection")
     st.markdown("Scans the absolute latest 5-minute candle for new valid squeeze setups.")
+    st.info("💡 **Note on Speed:** The first scan of the day downloads the full 30-day baseline and takes ~30 seconds. Subsequent scans check memory cache and are nearly instantaneous.")
     
     if st.button("🚀 Run Live Market Scan", use_container_width=True, type="primary"):
         if not breeze_client:
@@ -252,6 +234,7 @@ with tab_live:
             one_month_ago = now - timedelta(days=30)
             
             signals_found = []
+            api_failures = 0
             
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -276,38 +259,45 @@ with tab_live:
                         except:
                             pass
 
-            # Step 2: High-Speed Concurrent API Data Pull
-            status_text.text("Initiating high-speed API scan...")
+            # Step 2: Sequential API Data Pull (Safe to prevent rate limits)
+            status_text.text("Initiating API scan...")
             
-            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                futures = {}
-                for symbol in NIFTY50_SYMBOLS:
-                    cached_df = st.session_state.MEMORY_CACHE.get(symbol, pd.DataFrame())
-                    futures[executor.submit(scan_single_symbol_live, breeze_client, symbol, cached_df, now, one_month_ago)] = symbol
+            for idx, symbol in enumerate(NIFTY50_SYMBOLS):
+                status_text.text(f"Scanning {symbol} ({idx+1}/50)...")
                 
-                for idx, future in enumerate(concurrent.futures.as_completed(futures)):
-                    sym = futures[future]
-                    try:
-                        symbol, combined_df, signal_data, has_new_data = future.result()
-                        
-                        if not combined_df.empty:
-                            st.session_state.MEMORY_CACHE[symbol] = combined_df
-                            
-                            # ONLY write to disk if new data was actually fetched to save time
-                            if has_new_data:
-                                combined_df[['open', 'high', 'low', 'close', 'volume']].to_csv(os.path.join(DATA_FOLDER, f"{symbol}_5min.csv"))
-                        
-                        if signal_data:
-                            signals_found.append(signal_data)
-                            
-                    except Exception as e:
-                        pass
+                cached_df = st.session_state.MEMORY_CACHE.get(symbol, pd.DataFrame())
+                catchup_start = max(cached_df.index.max(), one_month_ago) if not cached_df.empty else one_month_ago
+                
+                # Fetch missing bars
+                live_df = fetch_icici_intraday(breeze_client, symbol, catchup_start, now)
+                
+                if live_df.empty:
+                    # If it's empty but we didn't have a cache, the API call failed completely
+                    if cached_df.empty:
+                        api_failures += 1
+                else:
+                    # Merge and save new data
+                    combined_df = pd.concat([cached_df, live_df])
+                    combined_df = combined_df[~combined_df.index.duplicated(keep='last')].sort_index()
+                    combined_df = combined_df[combined_df.index >= one_month_ago]
                     
-                    status_text.text(f"Scanning {sym} ({idx+1}/50)...")
-                    progress_bar.progress((idx + 1) / len(NIFTY50_SYMBOLS))
+                    st.session_state.MEMORY_CACHE[symbol] = combined_df
+                    combined_df[['open', 'high', 'low', 'close', 'volume']].to_csv(os.path.join(DATA_FOLDER, f"{symbol}_5min.csv"))
+                    
+                    # Execute Math Logic
+                    _, signal_data = advanced_squeeze_live_scanner(combined_df, symbol)
+                    if signal_data:
+                        signals_found.append(signal_data)
+
+                # Crucial throttle to avoid ICICI rate limiting dropping our connection
+                time.sleep(0.5)
+                progress_bar.progress((idx + 1) / len(NIFTY50_SYMBOLS))
                 
-            status_text.text(f"✅ High-Speed Scan complete at {now.strftime('%H:%M:%S')}")
+            status_text.text(f"✅ Scan complete at {now.strftime('%H:%M:%S')}")
             
+            if api_failures > 10:
+                st.error("⚠️ Warning: Multiple API requests returned empty data. ICICI might be rate-limiting your connection.")
+
             # E. ALERT MANAGEMENT UI
             if signals_found:
                 st.success(f"🔥 {len(signals_found)} Elite Breakout(s) Detected!")
