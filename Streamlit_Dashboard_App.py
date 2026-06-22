@@ -25,9 +25,6 @@ NIFTY50_SYMBOLS = [
     "TECHM", "TITAN", "ULTRACEMCO", "UPL", "WIPRO"
 ]
 
-if "MEMORY_CACHE" not in st.session_state:
-    st.session_state.MEMORY_CACHE = {}
-
 def load_local_data(symbol):
     """Loads existing CSV from local folder."""
     file_path = os.path.join(DATA_FOLDER, f"{symbol}_5min.csv")
@@ -84,25 +81,46 @@ session_token = st.sidebar.text_input("Session Token", type="password")
 breeze_client = BreezeConnect(api_key=api_key) if api_key else None
 if session_token and breeze_client: breeze_client.generate_session(api_secret=secret_key, session_token=session_token)
 
-# Heartbeat
-if breeze_client:
-    st.sidebar.caption(f"Last heartbeat: {datetime.now().strftime('%H:%M:%S')}")
+# Connection Indicator
+if breeze_client and hasattr(breeze_client, 'session_token'):
+    st.sidebar.markdown("### Connection: 🟢 Live")
+else:
+    st.sidebar.markdown("### Connection: 🔴 Disconnected")
 
-if st.button("🚀 Run Scan (Local + Gap Update)"):
-    signals = []
-    for symbol in NIFTY50_SYMBOLS:
-        df = load_local_data(symbol)
-        if not df.empty:
-            gap_df = fetch_gap_data(breeze_client, symbol, df.index.max())
-            if not gap_df.empty:
-                df = pd.concat([df, gap_df]).drop_duplicates()
-                df.to_csv(os.path.join(DATA_FOLDER, f"{symbol}_5min.csv"))
+# Tabs
+tab_live, tab_backtest = st.tabs(["🔴 Live Scanner", "⏪ Backtesting"])
+
+with tab_live:
+    if st.button("🚀 Run Scan (Local + Gap Update)"):
+        signals = []
+        for symbol in NIFTY50_SYMBOLS:
+            df = load_local_data(symbol)
+            if not df.empty and breeze_client:
+                gap_df = fetch_gap_data(breeze_client, symbol, df.index.max())
+                if not gap_df.empty:
+                    df = pd.concat([df, gap_df]).drop_duplicates()
+                    df.to_csv(os.path.join(DATA_FOLDER, f"{symbol}_5min.csv"))
+            
+            if not df.empty:
+                df = base_squeeze_math(df)
+                if df.iloc[-1]['signal']:
+                    signals.append({"Symbol": symbol, "Close": df.iloc[-1]['close']})
+            time.sleep(0.6)
         
-        if not df.empty:
-            df = base_squeeze_math(df)
-            if df.iloc[-1]['signal']:
-                signals.append({"Symbol": symbol, "Close": df.iloc[-1]['close']})
-        time.sleep(0.6) # Gentle sleep to prevent rate limits
-    
-    if signals: st.dataframe(pd.DataFrame(signals))
-    else: st.info("No signals found.")
+        if signals: st.dataframe(pd.DataFrame(signals))
+        else: st.info("No signals found.")
+
+with tab_backtest:
+    st.subheader("Historical Backtest")
+    if st.button("🕵️‍♂️ Run Historical Backtest"):
+        results = []
+        for symbol in NIFTY50_SYMBOLS:
+            df = load_local_data(symbol)
+            if not df.empty:
+                df = base_squeeze_math(df)
+                signal_rows = df[df['signal'] == True]
+                if not signal_rows.empty:
+                    results.append({"Symbol": symbol, "Count": len(signal_rows)})
+        
+        if results: st.dataframe(pd.DataFrame(results))
+        else: st.info("No historical signals found.")
