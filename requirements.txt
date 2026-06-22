@@ -2,3 +2,4 @@ streamlit
 breeze-connect
 pandas
 numpy
+pytz
