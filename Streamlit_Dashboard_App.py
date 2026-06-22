@@ -44,6 +44,24 @@ def base_squeeze_math(df):
     df['signal'] = df['trend_ok'] & df['squeeze_duration_met']
     return df
 
+def check_1_2_target(df, signal_idx):
+    """
+    Checks if price hits +2% gain before -1% loss.
+    Looks ahead for up to 24 bars (2 hours).
+    """
+    signal_price = df.iloc[signal_idx]['close']
+    target_up = signal_price * 1.02
+    target_down = signal_price * 0.99
+    
+    future_data = df.iloc[signal_idx+1 : signal_idx+25]
+    
+    for _, row in future_data.iterrows():
+        if row['high'] >= target_up:
+            return "✅ Hit 2% Target"
+        if row['low'] <= target_down:
+            return "❌ Stop Loss Hit"
+    return "⏳ Still Open / No Target"
+
 def load_and_update_data(breeze_client, symbol):
     file_path = os.path.join(DATA_FOLDER, f"{symbol}_5min.csv")
     
@@ -128,8 +146,16 @@ with tab_backtest:
             df = load_and_update_data(None, symbol)
             if not df.empty:
                 df = base_squeeze_math(df)
-                signal_rows = df[df['signal'] == True]
-                if not signal_rows.empty:
-                    results.append({"Symbol": symbol, "Count": len(signal_rows)})
+                # Iterate through signals
+                for idx in df[df['signal'] == True].index:
+                    pos = df.index.get_loc(idx)
+                    # Check target 1:2
+                    outcome = check_1_2_target(df, pos)
+                    results.append({
+                        "Symbol": symbol,
+                        "DateTime": idx,
+                        "Price": df.loc[idx, 'close'],
+                        "Outcome": outcome
+                    })
         if results: st.dataframe(pd.DataFrame(results))
         else: st.info("No signals found.")
