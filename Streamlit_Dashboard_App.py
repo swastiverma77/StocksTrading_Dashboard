@@ -74,15 +74,27 @@ def base_squeeze_math(df):
 st.set_page_config(page_title="Institutional Scanner", layout="wide")
 st.title("📈 Nifty 50 Local-Cache Scanner")
 
+# Initialize session state for connection
+if 'breeze_client' not in st.session_state:
+    st.session_state.breeze_client = None
+
 # Sidebar Auth
+st.sidebar.header("🔑 Authentication")
 api_key = st.secrets.get("ICICI_API_KEY", os.environ.get("ICICI_API_KEY", ""))
 secret_key = st.secrets.get("ICICI_SECRET_KEY", os.environ.get("ICICI_SECRET_KEY", ""))
 session_token = st.sidebar.text_input("Session Token", type="password")
-breeze_client = BreezeConnect(api_key=api_key) if api_key else None
-if session_token and breeze_client: breeze_client.generate_session(api_secret=secret_key, session_token=session_token)
+
+if st.sidebar.button("🔌 Connect to ICICI"):
+    try:
+        client = BreezeConnect(api_key=api_key)
+        client.generate_session(api_secret=secret_key, session_token=session_token)
+        st.session_state.breeze_client = client
+        st.sidebar.success("Session Established!")
+    except Exception as e:
+        st.sidebar.error(f"Connection failed: {e}")
 
 # Connection Indicator
-if breeze_client and hasattr(breeze_client, 'session_token'):
+if st.session_state.breeze_client:
     st.sidebar.markdown("### Connection: 🟢 Live")
 else:
     st.sidebar.markdown("### Connection: 🔴 Disconnected")
@@ -95,8 +107,8 @@ with tab_live:
         signals = []
         for symbol in NIFTY50_SYMBOLS:
             df = load_local_data(symbol)
-            if not df.empty and breeze_client:
-                gap_df = fetch_gap_data(breeze_client, symbol, df.index.max())
+            if not df.empty and st.session_state.breeze_client:
+                gap_df = fetch_gap_data(st.session_state.breeze_client, symbol, df.index.max())
                 if not gap_df.empty:
                     df = pd.concat([df, gap_df]).drop_duplicates()
                     df.to_csv(os.path.join(DATA_FOLDER, f"{symbol}_5min.csv"))
