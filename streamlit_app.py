@@ -4,12 +4,10 @@ import os
 import sys
 import warnings
 
-# --- FIX: Ensure the project root is in the path so the folder can be found ---
+# --- FIX: Ensure the project root is in the path ---
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Import the segregated strategies from your "Scanner Strategies" folder
-# Note: Python typically uses underscores for module imports. 
-# Ensure your folder name is handled correctly or use the package path.
+# Import the segregated strategies from the renamed folder
 from Scanner_Strategies.Momentum_Squeeze import (
     strategy_pure_squeeze,
     strategy_momentum_breakout,
@@ -27,7 +25,7 @@ DATA_FOLDER = "data/"
 # --- SIDEBAR: SCANNER SELECTION ---
 st.sidebar.header("⚙️ Scanner Settings")
 
-# Mapping UI labels to the segregated functions
+# Mapping UI labels to the imported functions
 strategy_map = {
     "Pure Squeeze Scan": strategy_pure_squeeze,
     "Momentum Breakout": strategy_momentum_breakout,
