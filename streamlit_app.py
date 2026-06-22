@@ -1,9 +1,16 @@
 import streamlit as st
 import pandas as pd
 import os
+import sys
 import warnings
-# Import the segregated strategies from your Scanner Strategies folder
-from strategies.Momentum_Squeeze import (
+
+# --- FIX: Ensure the project root is in the path so the folder can be found ---
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Import the segregated strategies from your "Scanner Strategies" folder
+# Note: Python typically uses underscores for module imports. 
+# Ensure your folder name is handled correctly or use the package path.
+from Scanner_Strategies.Momentum_Squeeze import (
     strategy_pure_squeeze,
     strategy_momentum_breakout,
     strategy_combined_elite,
@@ -14,13 +21,13 @@ from strategies.Momentum_Squeeze import (
 warnings.filterwarnings("ignore", category=UserWarning, module="pandas")
 st.set_page_config(page_title="Trading Scanner Dashboard", layout="wide")
 
-# Pointing to the same data folder used by live_scanner_cell4.py
+# Pointing to the data folder in your GitHub root
 DATA_FOLDER = "data/"
 
 # --- SIDEBAR: SCANNER SELECTION ---
 st.sidebar.header("⚙️ Scanner Settings")
 
-# Mapping UI labels to the segregated functions from Momentum_Squeeze.py
+# Mapping UI labels to the segregated functions
 strategy_map = {
     "Pure Squeeze Scan": strategy_pure_squeeze,
     "Momentum Breakout": strategy_momentum_breakout,
@@ -40,7 +47,7 @@ with tab_backtest:
     st.header("Backtesting Data Loader")
     
     if os.path.exists(DATA_FOLDER):
-        # Scan folder for files updated by live_scanner_cell4.py
+        # Scan folder for files
         available_files = [f.replace("_5min.csv", "") for f in os.listdir(DATA_FOLDER) if f.endswith("_5min.csv")]
         
         if available_files:
@@ -52,7 +59,6 @@ with tab_backtest:
                     df = pd.read_csv(file_path)
                     df.columns = df.columns.str.strip().str.lower()
                     
-                    # Run the selected scanner logic
                     results = run_scanner(df)
                     st.session_state.results = results
                     st.success(f"Successfully processed {selected_symbol}!")
@@ -68,9 +74,6 @@ with tab_backtest:
 
 with tab_live:
     st.info("The Live Scanner is running in the background via live_scanner_cell4.py.")
-    st.write("Current data in the 'data/' folder is automatically updated by the background process.")
-    
-    # Optional: Display the most recently updated file in the folder
     if os.path.exists(DATA_FOLDER):
         files = [os.path.join(DATA_FOLDER, f) for f in os.listdir(DATA_FOLDER) if f.endswith("_5min.csv")]
         if files:
