@@ -181,11 +181,15 @@ st.markdown("Live 5-minute Intraday Breakout Dashboard & Backtester")
 
 # --- SIDEBAR AUTHENTICATION ---
 st.sidebar.header("🔑 Authentication")
-st.sidebar.markdown("Enter your daily ICICI credentials below.")
+st.sidebar.markdown("Enter your daily ICICI Session Token below.")
 
-# Pull from Streamlit Secrets if configured, otherwise allow manual input
-api_key = st.secrets.get("ICICI_API_KEY", "") if "ICICI_API_KEY" in st.secrets else st.sidebar.text_input("API Key", type="password")
-secret_key = st.secrets.get("ICICI_SECRET_KEY", "") if "ICICI_SECRET_KEY" in st.secrets else st.sidebar.text_input("Secret Key", type="password")
+# Pull API Keys directly from Streamlit Secrets or Environment Variables
+api_key = st.secrets.get("ICICI_API_KEY", os.environ.get("ICICI_API_KEY", ""))
+secret_key = st.secrets.get("ICICI_SECRET_KEY", os.environ.get("ICICI_SECRET_KEY", ""))
+
+if not api_key or not secret_key:
+    st.sidebar.error("⚠️ API keys not found! Please configure `ICICI_API_KEY` and `ICICI_SECRET_KEY` in Streamlit Secrets.")
+
 session_token = st.sidebar.text_input("Daily Session Token", type="password")
 
 @st.cache_resource
@@ -199,8 +203,10 @@ def init_breeze(api, secret, token):
 
 # --- MAIN DASHBOARD AREA ---
 if st.sidebar.button("🔌 Connect to ICICI"):
-    if not api_key or not secret_key or not session_token:
-        st.sidebar.warning("Please fill in all credential fields.")
+    if not api_key or not secret_key:
+        st.sidebar.error("❌ Missing API/Secret Keys in app configuration.")
+    elif not session_token:
+        st.sidebar.warning("⚠️ Please enter your Session Token.")
     else:
         breeze = init_breeze(api_key, secret_key, session_token)
         if breeze:
