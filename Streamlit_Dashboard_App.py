@@ -234,9 +234,18 @@ if st.sidebar.button("🔌 Connect to ICICI"):
 tab_live, tab_backtest = st.tabs(["🔴 Live Scanner", "⏪ Backtesting"])
 
 with tab_live:
-    if st.button("🚀 Run Scan & Update Data"):
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        run_manual = st.button("🚀 Run Manual Scan", use_container_width=True)
+    with col2:
+        auto_scan = st.toggle("⏱️ Enable Auto-Scan (Waits for 5-min candle close)", key="auto_scan_toggle")
+        
+    if run_manual or auto_scan:
         if not st.session_state.breeze_client:
             st.warning("⚠️ Please connect to ICICI first to run the live scan.")
+            if auto_scan:
+                time.sleep(5)  # Prevent infinite fast loop if disconnected
+                st.rerun()
         else:
             signals = []
             progress_bar = st.progress(0)
@@ -257,12 +266,25 @@ with tab_live:
                             })
                 progress_bar.progress((idx + 1) / len(NIFTY50_SYMBOLS))
                 
-            status_text.text("✅ Scan Complete")
+            status_text.text(f"✅ Scan Complete at {datetime.now(IST).strftime('%H:%M:%S')}")
             if signals: 
                 st.success(f"🔥 {len(signals)} Breakout(s) Detected!")
                 st.dataframe(pd.DataFrame(signals), use_container_width=True)
             else: 
                 st.info("No live elite signals found at this moment.")
+                
+            if auto_scan:
+                now_ist = datetime.now(IST)
+                # Calculate exactly when the next 5-minute block occurs
+                next_min = ((now_ist.minute // 5) + 1) * 5
+                next_run = now_ist.replace(minute=0, second=10, microsecond=0) + timedelta(minutes=next_min)
+                
+                # Calculate wait duration in seconds (adding 10 second buffer after close to ensure API data is ready)
+                wait_sec = (next_run - now_ist).total_seconds()
+                
+                st.info(f"⏳ Auto-Scan is ON. Waiting {int(wait_sec)} seconds for the next candle to close... (Next scan at {next_run.strftime('%H:%M:%S')} IST)")
+                time.sleep(wait_sec)
+                st.rerun()
 
 with tab_backtest:
     st.subheader("Historical Backtest")
