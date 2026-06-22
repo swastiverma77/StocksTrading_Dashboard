@@ -4,6 +4,7 @@ import warnings
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
+import pytz
 import streamlit as st
 from breeze_connect import BreezeConnect
 
@@ -11,6 +12,7 @@ from breeze_connect import BreezeConnect
 warnings.filterwarnings("ignore", category=UserWarning, module="pandas")
 DATA_FOLDER = "data/"
 os.makedirs(DATA_FOLDER, exist_ok=True)
+IST = pytz.timezone('Asia/Kolkata')
 
 NIFTY50_SYMBOLS = ["RELIANCE", "HDFCBANK", "INFY", "ICICIBANK", "TCS"]
 
@@ -67,6 +69,9 @@ def load_and_update_data(breeze_client, symbol):
     
     if os.path.exists(file_path):
         df = pd.read_csv(file_path, index_col=0, parse_dates=True)
+        # Ensure index is timezone aware (localized to IST)
+        if df.index.tz is None:
+            df.index = df.index.tz_localize('UTC').tz_convert(IST)
         df = df.sort_index()
     else:
         st.error(f"File not found: {file_path}")
@@ -75,7 +80,7 @@ def load_and_update_data(breeze_client, symbol):
     # Gap Update Logic
     if breeze_client:
         last_ts = df.index.max()
-        now = datetime.now()
+        now = datetime.now(IST)
         if last_ts < (now - timedelta(minutes=5)):
             try:
                 response = breeze_client.get_historical_data_v2(
@@ -88,7 +93,7 @@ def load_and_update_data(breeze_client, symbol):
                 )
                 if response and 'success' in response:
                     new_data = pd.DataFrame(response['success'])
-                    new_data['datetime'] = pd.to_datetime(new_data['datetime'], format='ISO8601')
+                    new_data['datetime'] = pd.to_datetime(new_data['datetime'], format='ISO8601').dt.tz_localize('UTC').dt.tz_convert(IST)
                     new_data.set_index('datetime', inplace=True)
                     df = pd.concat([df, new_data]).drop_duplicates().sort_index()
                     df.to_csv(file_path)
@@ -98,7 +103,7 @@ def load_and_update_data(breeze_client, symbol):
 
 # --- UI LAYOUT ---
 st.set_page_config(page_title="Institutional Scanner", layout="wide")
-st.title("📈 Nifty 50 Local-Cache Scanner")
+st.title("📈 Nifty 50 Local-Cache Scanner (IST Time)")
 
 if 'breeze_client' not in st.session_state:
     st.session_state.breeze_client = None
@@ -118,11 +123,6 @@ if st.sidebar.button("🔌 Connect to ICICI"):
     except Exception as e:
         st.sidebar.error(f"Connection failed: {e}")
 
-if st.session_state.breeze_client:
-    st.sidebar.markdown("### Connection: 🟢 Live")
-else:
-    st.sidebar.markdown("### Connection: 🔴 Disconnected")
-
 # Main Content
 tab_live, tab_backtest = st.tabs(["🔴 Live Scanner", "⏪ Backtesting"])
 
@@ -134,7 +134,8 @@ with tab_live:
             if not df.empty:
                 df = base_squeeze_math(df)
                 if df.iloc[-1]['signal']:
-                    signals.append({"Symbol": symbol, "Close": df.iloc[-1]['close']})
+                    # Display localized time
+                    signals.append({"Symbol": symbol, "Time (IST)": df.index[-1].strftime('%Y-%m-%d %H:%M'), "Close": df.iloc[-1]['close']})
         if signals: st.dataframe(pd.DataFrame(signals))
         else: st.info("No signals found.")
 
@@ -146,14 +147,12 @@ with tab_backtest:
             df = load_and_update_data(None, symbol)
             if not df.empty:
                 df = base_squeeze_math(df)
-                # Iterate through signals
                 for idx in df[df['signal'] == True].index:
                     pos = df.index.get_loc(idx)
-                    # Check target 1:2
                     outcome = check_1_2_target(df, pos)
                     results.append({
                         "Symbol": symbol,
-                        "DateTime": idx,
+                        "DateTime (IST)": idx.strftime('%Y-%m-%d %H:%M'),
                         "Price": df.loc[idx, 'close'],
                         "Outcome": outcome
                     })
