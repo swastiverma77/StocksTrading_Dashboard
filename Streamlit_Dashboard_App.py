@@ -116,6 +116,7 @@ def load_and_update_data(breeze_client, symbol):
     file_path = os.path.join(DATA_FOLDER, f"{symbol}_5min.csv")
     df = pd.DataFrame()
     
+    # 1. Attempt to load local file if it exists
     if os.path.exists(file_path):
         try:
             raw_df = pd.read_csv(file_path)
@@ -153,20 +154,27 @@ def load_and_update_data(breeze_client, symbol):
                     
         except Exception as e:
             st.error(f"Error parsing local data for {symbol}: {e}")
-            return pd.DataFrame()
-    else:
-        st.error(f"File not found: {file_path}")
+            # Do not return here. Let the API attempt a fresh fetch below.
+            
+    elif not breeze_client:
+        # If no local file exists and we are not connected to the API (Backtesting tab)
+        st.warning(f"No local data for {symbol}. Run Live Scanner first to build baseline.")
         return pd.DataFrame()
 
-    # Gap Update Logic
-    if breeze_client and not df.empty:
-        last_ts = df.index.max()
+    # 2. Gap Update OR Initial Baseline Fetch
+    if breeze_client:
         now_ist = datetime.now(IST)
         
-        if last_ts < (now_ist - timedelta(minutes=5)):
+        if not df.empty:
+            fetch_start = df.index.max()
+        else:
+            # If the file was missing entirely, fetch a 30-day baseline!
+            fetch_start = now_ist - timedelta(days=30)
+        
+        if fetch_start < (now_ist - timedelta(minutes=5)):
             try:
                 # ICICI API explicitly expects UTC time for its ISO8601 strings
-                last_ts_utc = last_ts.astimezone(pytz.utc)
+                last_ts_utc = fetch_start.astimezone(pytz.utc)
                 now_utc = now_ist.astimezone(pytz.utc)
                 
                 response = breeze_client.get_historical_data_v2(
@@ -177,15 +185,27 @@ def load_and_update_data(breeze_client, symbol):
                     exchange_code="NSE",
                     product_type="cash"
                 )
-                if response and 'success' in response:
+                if response and 'success' in response and response['success']:
                     new_data = pd.DataFrame(response['success'])
-                    new_data['datetime'] = pd.to_datetime(new_data['datetime'], format='ISO8601').dt.tz_localize('UTC').dt.tz_convert(IST)
-                    new_data.set_index('datetime', inplace=True)
                     
-                    df = pd.concat([df, new_data]).drop_duplicates().sort_index()
-                    df.to_csv(file_path)
+                    if not new_data.empty:
+                        new_data['datetime'] = pd.to_datetime(new_data['datetime'], format='ISO8601').dt.tz_localize('UTC').dt.tz_convert(IST)
+                        new_data.set_index('datetime', inplace=True)
+                        
+                        # Ensure columns are numeric
+                        for col in ['open', 'high', 'low', 'close', 'volume']:
+                            if col in new_data.columns:
+                                new_data[col] = pd.to_numeric(new_data[col], errors='coerce')
+                        
+                        if not df.empty:
+                            df = pd.concat([df, new_data]).drop_duplicates().sort_index()
+                        else:
+                            df = new_data.sort_index()
+                            
+                        # Save back to CSV for next time
+                        df.to_csv(file_path)
             except Exception as e:
-                st.sidebar.error(f"Update failed for {symbol}: {e}")
+                st.sidebar.error(f"API update failed for {symbol}: {e}")
     return df
 
 # --- UI LAYOUT ---
@@ -215,29 +235,34 @@ tab_live, tab_backtest = st.tabs(["🔴 Live Scanner", "⏪ Backtesting"])
 
 with tab_live:
     if st.button("🚀 Run Scan & Update Data"):
-        signals = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        for idx, symbol in enumerate(NIFTY50_SYMBOLS):
-            status_text.text(f"Scanning {symbol} ({idx+1}/50)...")
-            df = load_and_update_data(st.session_state.breeze_client, symbol)
-            if not df.empty:
-                df = base_squeeze_math(df)
-                if df.iloc[-1]['signal']:
-                    signals.append({
-                        "Symbol": symbol, 
-                        "Time (IST)": df.index[-1].strftime('%Y-%m-%d %H:%M'), 
-                        "Close": df.iloc[-1]['close']
-                    })
-            progress_bar.progress((idx + 1) / len(NIFTY50_SYMBOLS))
+        if not st.session_state.breeze_client:
+            st.warning("⚠️ Please connect to ICICI first to run the live scan.")
+        else:
+            signals = []
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             
-        status_text.text("✅ Scan Complete")
-        if signals: 
-            st.success(f"🔥 {len(signals)} Breakout(s) Detected!")
-            st.dataframe(pd.DataFrame(signals), use_container_width=True)
-        else: 
-            st.info("No live elite signals found at this moment.")
+            for idx, symbol in enumerate(NIFTY50_SYMBOLS):
+                status_text.text(f"Scanning {symbol} ({idx+1}/50)...")
+                df = load_and_update_data(st.session_state.breeze_client, symbol)
+                if not df.empty:
+                    # Make sure we have enough data points to calculate ema200
+                    if len(df) > 200:
+                        df = base_squeeze_math(df)
+                        if df.iloc[-1]['signal']:
+                            signals.append({
+                                "Symbol": symbol, 
+                                "Time (IST)": df.index[-1].strftime('%Y-%m-%d %H:%M'), 
+                                "Close": df.iloc[-1]['close']
+                            })
+                progress_bar.progress((idx + 1) / len(NIFTY50_SYMBOLS))
+                
+            status_text.text("✅ Scan Complete")
+            if signals: 
+                st.success(f"🔥 {len(signals)} Breakout(s) Detected!")
+                st.dataframe(pd.DataFrame(signals), use_container_width=True)
+            else: 
+                st.info("No live elite signals found at this moment.")
 
 with tab_backtest:
     st.subheader("Historical Backtest")
@@ -248,16 +273,18 @@ with tab_backtest:
         for idx, symbol in enumerate(NIFTY50_SYMBOLS):
             df = load_and_update_data(None, symbol)
             if not df.empty:
-                df = base_squeeze_math(df)
-                for i in df[df['signal'] == True].index:
-                    pos = df.index.get_loc(i)
-                    outcome = check_1_2_target(df, pos)
-                    results.append({
-                        "Symbol": symbol,
-                        "DateTime (IST)": i.strftime('%Y-%m-%d %H:%M'),
-                        "Price": df.loc[i, 'close'],
-                        "Outcome": outcome
-                    })
+                # Ensure we have enough data points for 200 EMA to work
+                if len(df) > 200:
+                    df = base_squeeze_math(df)
+                    for i in df[df['signal'] == True].index:
+                        pos = df.index.get_loc(i)
+                        outcome = check_1_2_target(df, pos)
+                        results.append({
+                            "Symbol": symbol,
+                            "DateTime (IST)": i.strftime('%Y-%m-%d %H:%M'),
+                            "Price": df.loc[i, 'close'],
+                            "Outcome": outcome
+                        })
             progress_bar_bt.progress((idx + 1) / len(NIFTY50_SYMBOLS))
             
         if results: 
