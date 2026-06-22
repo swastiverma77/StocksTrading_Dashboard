@@ -9,7 +9,7 @@ from breeze_connect import BreezeConnect
 
 # --- CONFIGURATION ---
 warnings.filterwarnings("ignore", category=UserWarning, module="pandas")
-DATA_FOLDER = "data"
+DATA_FOLDER = "data/"
 os.makedirs(DATA_FOLDER, exist_ok=True)
 
 NIFTY50_SYMBOLS = ["RELIANCE", "HDFCBANK", "INFY", "ICICIBANK", "TCS"]
@@ -70,5 +70,58 @@ def load_and_update_data(breeze_client, symbol):
                 st.sidebar.error(f"Update failed for {symbol}: {e}")
     return df
 
-# UI Logic...
-# (Ensure your UI calls the updated base_squeeze_math function)
+# --- UI LAYOUT ---
+st.set_page_config(page_title="Institutional Scanner", layout="wide")
+st.title("📈 Nifty 50 Local-Cache Scanner")
+
+if 'breeze_client' not in st.session_state:
+    st.session_state.breeze_client = None
+
+# Sidebar
+st.sidebar.header("🔑 Authentication")
+api_key = st.secrets.get("ICICI_API_KEY", os.environ.get("ICICI_API_KEY", ""))
+secret_key = st.secrets.get("ICICI_SECRET_KEY", os.environ.get("ICICI_SECRET_KEY", ""))
+session_token = st.sidebar.text_input("Session Token", type="password")
+
+if st.sidebar.button("🔌 Connect to ICICI"):
+    try:
+        client = BreezeConnect(api_key=api_key)
+        client.generate_session(api_secret=secret_key, session_token=session_token)
+        st.session_state.breeze_client = client
+        st.sidebar.success("Session Established!")
+    except Exception as e:
+        st.sidebar.error(f"Connection failed: {e}")
+
+if st.session_state.breeze_client:
+    st.sidebar.markdown("### Connection: 🟢 Live")
+else:
+    st.sidebar.markdown("### Connection: 🔴 Disconnected")
+
+# Main Content
+tab_live, tab_backtest = st.tabs(["🔴 Live Scanner", "⏪ Backtesting"])
+
+with tab_live:
+    if st.button("🚀 Run Scan & Update Data"):
+        signals = []
+        for symbol in NIFTY50_SYMBOLS:
+            df = load_and_update_data(st.session_state.breeze_client, symbol)
+            if not df.empty:
+                df = base_squeeze_math(df)
+                if df.iloc[-1]['signal']:
+                    signals.append({"Symbol": symbol, "Close": df.iloc[-1]['close']})
+        if signals: st.dataframe(pd.DataFrame(signals))
+        else: st.info("No signals found.")
+
+with tab_backtest:
+    st.subheader("Historical Backtest")
+    if st.button("🕵️‍♂️ Run Historical Backtest"):
+        results = []
+        for symbol in NIFTY50_SYMBOLS:
+            df = load_and_update_data(None, symbol)
+            if not df.empty:
+                df = base_squeeze_math(df)
+                signal_rows = df[df['signal'] == True]
+                if not signal_rows.empty:
+                    results.append({"Symbol": symbol, "Count": len(signal_rows)})
+        if results: st.dataframe(pd.DataFrame(results))
+        else: st.info("No signals found.")
