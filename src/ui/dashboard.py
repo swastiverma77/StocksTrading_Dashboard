@@ -94,19 +94,24 @@ def render_dashboard(
     results = st.session_state.get("last_results", pd.DataFrame())
     last_updated = st.session_state.get("last_updated", now)
 
-    metric_cols = st.columns(5)
-    with metric_cols[0]:
-        metric_card("Active Momentum", str(_count_status(results, "MOMENTUM")), "Stocks", "+12%", "#2378ff")
-    with metric_cols[1]:
-        metric_card("Active Squeezes", str(int((results.get("Squeeze Score", pd.Series(dtype=int)) > 70).sum())), "Stocks", "+8%", "#b657ff")
-    with metric_cols[2]:
-        metric_card("Breakouts Today", str(_count_status(results, "BREAKOUT")), "Stocks", "+16%", "#ffbf2e")
-    with metric_cols[3]:
-        avg_score = int(results["Final Score"].mean()) if not results.empty else 0
-        metric_card("Avg Final Score", str(avg_score), "/100", "+6", "#20c7ff")
-    with metric_cols[4]:
-        breadth = int((results["Final Score"].ge(60).mean() * 100)) if not results.empty else 0
-        metric_card("Market Breadth", f"{breadth}%", "", "+9%", "#5df24d")
+    avg_score = int(results["Final Score"].mean()) if not results.empty else 0
+    breadth = int((results["Final Score"].ge(60).mean() * 100)) if not results.empty else 0
+    st.markdown(
+        '<div class="metric-grid">'
+        + metric_card("Active Momentum", str(_count_status(results, "MOMENTUM")), "Stocks", "+12%", "#2378ff")
+        + metric_card(
+            "Active Squeezes",
+            str(int((results.get("Squeeze Score", pd.Series(dtype=int)) > 70).sum())),
+            "Stocks",
+            "+8%",
+            "#b657ff",
+        )
+        + metric_card("Breakouts Today", str(_count_status(results, "BREAKOUT")), "Stocks", "+16%", "#ffbf2e")
+        + metric_card("Avg Final Score", str(avg_score), "/100", "+6", "#20c7ff")
+        + metric_card("Market Breadth", f"{breadth}%", "", "+9%", "#5df24d")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
     st.write("")
     st.markdown(

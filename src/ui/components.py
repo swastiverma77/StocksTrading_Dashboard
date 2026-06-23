@@ -4,9 +4,8 @@ import pandas as pd
 import streamlit as st
 
 
-def metric_card(title: str, value: str, sub: str, change: str, color: str = "#2378ff") -> None:
-    st.markdown(
-        f"""
+def metric_card(title: str, value: str, sub: str, change: str, color: str = "#2378ff") -> str:
+    return f"""
         <div class="metric-card">
           <div class="metric-title">{title}</div>
           <span class="metric-value">{value}</span>
@@ -14,9 +13,7 @@ def metric_card(title: str, value: str, sub: str, change: str, color: str = "#23
           <span class="metric-up">{change}</span>
           <div class="spark" style="box-shadow: inset 0 -2px 0 {color};"></div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        """
 
 
 def render_results_table(results: pd.DataFrame) -> None:
@@ -40,4 +37,3 @@ def render_results_table(results: pd.DataFrame) -> None:
             "Vol Ratio": st.column_config.NumberColumn("Vol Ratio", format="%.1fx"),
         },
     )
-
