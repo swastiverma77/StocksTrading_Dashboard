@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from html import escape
+
 import pandas as pd
 import streamlit as st
 
@@ -23,17 +25,49 @@ def render_results_table(results: pd.DataFrame) -> None:
 
     display = results.copy()
     display.insert(0, "Rank", range(1, len(display) + 1))
-    st.dataframe(
-        display,
-        hide_index=True,
-        use_container_width=True,
-        column_config={
-            "Symbol": st.column_config.TextColumn("Symbol", width="medium"),
-            "LTP": st.column_config.NumberColumn("LTP", format="%.2f"),
-            "Final Score": st.column_config.ProgressColumn("Final Score", min_value=0, max_value=100),
-            "Trend Score": st.column_config.ProgressColumn("Trend Score", min_value=0, max_value=100),
-            "Squeeze Score": st.column_config.ProgressColumn("Squeeze Score", min_value=0, max_value=100),
-            "Momentum Score": st.column_config.ProgressColumn("Momentum Score", min_value=0, max_value=100),
-            "Vol Ratio": st.column_config.NumberColumn("Vol Ratio", format="%.1fx"),
-        },
+
+    columns = [
+        "Rank",
+        "Symbol",
+        "LTP",
+        "Final Score",
+        "Trend Score",
+        "Squeeze Score",
+        "Momentum Score",
+        "Vol Ratio",
+        "RSI (14)",
+        "Status",
+    ]
+    rows = "".join(_result_row(row, columns) for _, row in display[columns].iterrows())
+    headers = "".join(f"<th>{escape(column)}</th>" for column in columns)
+    st.markdown(
+        f'<div class="results-table-wrap"><table class="results-table"><thead><tr>{headers}</tr></thead><tbody>{rows}</tbody></table></div>',
+        unsafe_allow_html=True,
     )
+
+
+def _result_row(row: pd.Series, columns: list[str]) -> str:
+    cells = []
+    for column in columns:
+        value = row[column]
+        if column == "Symbol":
+            cells.append(f'<td class="symbol-cell">{escape(str(value))}</td>')
+        elif column == "Status":
+            cells.append(f'<td><span class="status-badge">{escape(str(value))}</span></td>')
+        elif column in {"Final Score", "Trend Score", "Squeeze Score", "Momentum Score"}:
+            score = int(value)
+            cells.append(
+                '<td>'
+                f'<div class="score-cell"><span>{score}</span>'
+                f'<div class="score-track"><div class="score-fill" style="width:{score}%"></div></div></div>'
+                "</td>"
+            )
+        elif column == "Vol Ratio":
+            cells.append(f"<td>{float(value):.1f}x</td>")
+        elif column == "LTP":
+            cells.append(f"<td>{float(value):.2f}</td>")
+        elif column == "RSI (14)":
+            cells.append(f"<td>{float(value):.1f}</td>")
+        else:
+            cells.append(f"<td>{escape(str(value))}</td>")
+    return f"<tr>{''.join(cells)}</tr>"

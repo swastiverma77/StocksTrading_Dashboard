@@ -46,9 +46,23 @@ def apply_theme() -> None:
         .stSelectbox div[data-baseweb="select"] > div, .stTextInput input { background:#091422; border:1px solid var(--line); color:var(--text); border-radius:8px; }
         div[data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:8px; overflow:auto; max-width:100%; }
         .stDataFrame { max-width:100%; overflow:auto; }
+        .results-table-wrap { width:100%; max-width:100%; overflow-x:auto; border:1px solid var(--line); border-radius:8px; background:#080f1a; }
+        .results-table { width:100%; min-width:920px; border-collapse:collapse; table-layout:fixed; }
+        .results-table th { color:var(--muted); font-weight:700; text-align:left; background:#171b23; padding:12px 10px; border-bottom:1px solid #303747; }
+        .results-table td { padding:12px 10px; border-bottom:1px solid #222a36; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .results-table th:nth-child(1), .results-table td:nth-child(1) { width:52px; text-align:right; }
+        .results-table th:nth-child(2), .results-table td:nth-child(2) { width:142px; }
+        .results-table th:nth-child(3), .results-table td:nth-child(3) { width:86px; text-align:right; }
+        .symbol-cell { color:#58a6ff !important; font-weight:800; }
+        .score-cell { display:flex; align-items:center; gap:8px; min-width:0; }
+        .score-cell span { min-width:32px; text-align:right; font-weight:800; color:#7cff5d; }
+        .score-track { flex:1; height:7px; border-radius:999px; background:rgba(255,78,91,.18); overflow:hidden; min-width:42px; }
+        .score-fill { height:100%; border-radius:999px; background:#ff4d5b; }
+        .status-badge { display:inline-block; padding:4px 8px; border-radius:6px; background:rgba(35,120,255,.16); color:#58a6ff; font-size:.78rem; font-weight:800; }
         @media (max-width: 900px) {
             .block-container { padding-left: 1rem; padding-right: 1rem; }
             .metric-grid { grid-template-columns: 1fr; gap:12px; }
+            .results-table { min-width:780px; }
         }
         </style>
         """,
