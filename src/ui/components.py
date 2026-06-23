@@ -5,15 +5,15 @@ import streamlit as st
 
 
 def metric_card(title: str, value: str, sub: str, change: str, color: str = "#2378ff") -> str:
-    return f"""
-        <div class="metric-card">
-          <div class="metric-title">{title}</div>
-          <span class="metric-value">{value}</span>
-          <span class="metric-sub">{sub}</span>
-          <span class="metric-up">{change}</span>
-          <div class="spark" style="box-shadow: inset 0 -2px 0 {color};"></div>
-        </div>
-        """
+    return (
+        '<div class="metric-card">'
+        f'<div class="metric-title">{title}</div>'
+        f'<span class="metric-value">{value}</span>'
+        f'<span class="metric-sub">{sub}</span>'
+        f'<span class="metric-up">{change}</span>'
+        f'<div class="spark" style="box-shadow: inset 0 -2px 0 {color};"></div>'
+        "</div>"
+    )
 
 
 def render_results_table(results: pd.DataFrame) -> None:
