@@ -41,7 +41,7 @@ class DataGuardian:
         update_cache: bool = False,
     ) -> pd.DataFrame:
         path = self._path_for(symbol)
-        if path.exists():
+        if path is not None and path.exists():
             cached = self._read_cache(path)
             start_at = cached["datetime"].max() + pd.Timedelta(minutes=5)
         else:
@@ -61,15 +61,35 @@ class DataGuardian:
             merged = cached
 
         clean = self._normalize(merged)
-        clean.to_csv(path, index=False)
+        output_path = path or self.data_dir / f"{symbol}_5min.csv"
+        clean.to_csv(output_path, index=False)
         return clean
 
-    def _path_for(self, symbol: str) -> Path:
-        return self.data_dir / f"{symbol}_5min.csv"
+    def _path_for(self, symbol: str) -> Path | None:
+        candidates = [
+            self.data_dir / f"{symbol}_5min.csv",
+            self.data_dir / f"{symbol}.csv",
+            self.data_dir / f"{symbol}.NS.csv",
+            self.data_dir / f"{symbol.lower()}_5min.csv",
+            self.data_dir / f"{symbol.lower()}.csv",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+        matches = sorted(self.data_dir.glob(f"{symbol}*.csv"))
+        if matches:
+            return matches[0]
+        matches = sorted(self.data_dir.glob(f"{symbol.lower()}*.csv"))
+        return matches[0] if matches else None
 
     def _read_cache(self, path: Path) -> pd.DataFrame:
         raw = pd.read_csv(path)
-        return self._normalize(raw)
+        clean = self._normalize(raw)
+        if clean.empty:
+            raw_no_header = pd.read_csv(path, header=None)
+            clean = self._normalize_yfinance_multirow(raw_no_header)
+        return clean
 
     def _normalize(self, frame: pd.DataFrame) -> pd.DataFrame:
         if frame.empty:
@@ -98,6 +118,22 @@ class DataGuardian:
         frame = frame.dropna(subset=OHLCV_COLUMNS)
         frame = frame.drop_duplicates(subset=["datetime"]).sort_values("datetime")
         return frame[OHLCV_COLUMNS].reset_index(drop=True)
+
+    def _normalize_yfinance_multirow(self, frame: pd.DataFrame) -> pd.DataFrame:
+        if frame.empty or len(frame) < 4:
+            return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+        first_cell = str(frame.iloc[0, 0]).strip().lower()
+        third_cell = str(frame.iloc[2, 0]).strip().lower()
+        if first_cell != "price" or third_cell != "datetime":
+            return pd.DataFrame(columns=OHLCV_COLUMNS)
+
+        columns = ["datetime"]
+        columns.extend(str(value).strip().lower() for value in frame.iloc[0, 1:])
+        data = frame.iloc[3:].copy()
+        data = data.iloc[:, : len(columns)]
+        data.columns = columns
+        return self._normalize(data)
 
     def _fetch_updates(
         self,
