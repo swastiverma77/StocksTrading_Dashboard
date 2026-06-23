@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from src.models import ScannerMeta
-from src.scanners.base import BaseScanner, rsi, vwap
+from src.scanners.base import BaseScanner, results_frame, rsi, vwap
 
 
 class SqueezeMomentumScanner(BaseScanner):
@@ -19,6 +19,8 @@ class SqueezeMomentumScanner(BaseScanner):
             if len(frame) < 220:
                 continue
             enriched = self._indicators(frame)
+            if enriched.empty:
+                continue
             last = enriched.iloc[-1]
 
             trend_score = self._trend_score(last)
@@ -44,7 +46,7 @@ class SqueezeMomentumScanner(BaseScanner):
                 }
             )
 
-        return pd.DataFrame(rows).sort_values("Final Score", ascending=False).reset_index(drop=True)
+        return results_frame(rows)
 
     def _indicators(self, frame: pd.DataFrame) -> pd.DataFrame:
         data = frame.copy()
@@ -97,4 +99,3 @@ class SqueezeMomentumScanner(BaseScanner):
         volume_score = min(float(row["vol_ratio"]) / 3, 1)
         vwap_score = 1 if row["close"] > row["vwap"] else 0
         return int(((rsi_score * 0.35) + (volume_score * 0.4) + (vwap_score * 0.25)) * 100)
-

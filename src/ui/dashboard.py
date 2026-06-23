@@ -78,12 +78,15 @@ def render_dashboard(
         )
 
     scan_button = st.button("Refresh Scan", use_container_width=False)
-    if scan_button or "last_results" not in st.session_state:
+    if scan_button:
         with st.spinner("Updating local cache and scanning Nifty 50..."):
             universe = guardian.load_universe(
                 symbols=NIFTY_50_SYMBOLS,
                 breeze_client=session_manager.client if session_manager.connected else None,
+                update_cache=session_manager.connected and mode == "Live Scan",
             )
+            if not universe:
+                st.warning("No usable stock CSV files were found in the data folder.")
             results = scanner.scan(universe)
             st.session_state["last_results"] = results
             st.session_state["last_updated"] = now

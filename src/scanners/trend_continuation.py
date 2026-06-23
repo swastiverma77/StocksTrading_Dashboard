@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from src.models import ScannerMeta
-from src.scanners.base import BaseScanner, rsi
+from src.scanners.base import BaseScanner, results_frame, rsi
 
 
 class TrendContinuationScanner(BaseScanner):
@@ -24,7 +24,10 @@ class TrendContinuationScanner(BaseScanner):
             data["ema_200"] = data["close"].ewm(span=200, adjust=False).mean()
             data["rsi"] = rsi(data["close"])
             data["vol_ratio"] = data["volume"].rolling(5).mean() / data["volume"].rolling(20).mean()
-            last = data.dropna().iloc[-1]
+            clean = data.dropna()
+            if clean.empty:
+                continue
+            last = clean.iloc[-1]
 
             trend_score = int(
                 sum(
@@ -59,5 +62,4 @@ class TrendContinuationScanner(BaseScanner):
                 }
             )
 
-        return pd.DataFrame(rows).sort_values("Final Score", ascending=False).reset_index(drop=True)
-
+        return results_frame(rows)

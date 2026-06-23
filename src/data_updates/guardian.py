@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable
 
-import numpy as np
 import pandas as pd
 
 from src.config import DATA_DIR, IST, NIFTY_50_SYMBOLS
@@ -22,24 +21,37 @@ class DataGuardian:
         self,
         symbols: Iterable[str] = NIFTY_50_SYMBOLS,
         breeze_client: object | None = None,
+        update_cache: bool = False,
     ) -> dict[str, pd.DataFrame]:
-        return {
-            symbol: self.load_and_update_symbol(symbol, breeze_client)
-            for symbol in symbols
-        }
+        universe: dict[str, pd.DataFrame] = {}
+        for symbol in symbols:
+            frame = self.load_and_update_symbol(
+                symbol,
+                breeze_client=breeze_client,
+                update_cache=update_cache,
+            )
+            if not frame.empty:
+                universe[symbol] = frame
+        return universe
 
     def load_and_update_symbol(
         self,
         symbol: str,
         breeze_client: object | None = None,
+        update_cache: bool = False,
     ) -> pd.DataFrame:
         path = self._path_for(symbol)
         if path.exists():
             cached = self._read_cache(path)
             start_at = cached["datetime"].max() + pd.Timedelta(minutes=5)
         else:
+            if breeze_client is None:
+                return pd.DataFrame(columns=OHLCV_COLUMNS)
             cached = pd.DataFrame(columns=OHLCV_COLUMNS)
             start_at = self._floor_5min(datetime.now(IST) - timedelta(days=30))
+
+        if breeze_client is None or not update_cache:
+            return cached
 
         end_at = self._floor_5min(datetime.now(IST))
         if start_at <= end_at:
@@ -95,7 +107,7 @@ class DataGuardian:
         breeze_client: object | None,
     ) -> pd.DataFrame:
         if breeze_client is None:
-            return self._demo_candles(symbol, start_at, end_at)
+            return pd.DataFrame(columns=OHLCV_COLUMNS)
 
         try:
             response = breeze_client.get_historical_data_v2(
@@ -109,40 +121,8 @@ class DataGuardian:
             rows = response.get("Success", [])
             return pd.DataFrame(rows)
         except Exception:
-            return self._demo_candles(symbol, start_at, end_at)
-
-    def _demo_candles(
-        self,
-        symbol: str,
-        start_at: pd.Timestamp | datetime,
-        end_at: pd.Timestamp | datetime,
-    ) -> pd.DataFrame:
-        index = pd.date_range(start=start_at, end=end_at, freq="5min", tz=IST)
-        if len(index) == 0:
             return pd.DataFrame(columns=OHLCV_COLUMNS)
-
-        seed = abs(hash(symbol)) % (2**32)
-        rng = np.random.default_rng(seed)
-        base = 100 + (seed % 5000)
-        drift = rng.normal(0.02, 0.8, len(index)).cumsum()
-        close = base + drift
-        open_ = close + rng.normal(0, 0.4, len(index))
-        high = np.maximum(open_, close) + rng.uniform(0.2, 1.8, len(index))
-        low = np.minimum(open_, close) - rng.uniform(0.2, 1.8, len(index))
-        volume = rng.integers(120_000, 2_500_000, len(index))
-
-        return pd.DataFrame(
-            {
-                "datetime": index,
-                "open": open_,
-                "high": high,
-                "low": low,
-                "close": close,
-                "volume": volume,
-            }
-        )
 
     @staticmethod
     def _floor_5min(value: datetime) -> pd.Timestamp:
         return pd.Timestamp(value).floor("5min")
-

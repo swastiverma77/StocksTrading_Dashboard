@@ -65,7 +65,7 @@ def render_sidebar(
         elif session_manager.error:
             st.warning(session_manager.error)
         else:
-            st.info("Using demo data until Breeze is connected.")
+            st.info("Using existing CSV files in data/ until Breeze is connected.")
 
         with st.container(border=True):
             st.write("How to get Session Token?")
@@ -74,4 +74,3 @@ def render_sidebar(
             st.caption("3. Paste above and connect")
 
     return SidebarState(mode=mode, scanner_id=scanner_names[selected_name])
-
